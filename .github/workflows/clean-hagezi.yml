@@ -1,4 +1,4 @@
-name: Optimize Hagezi DNS Lists (Mini/Medium Edition)
+name: Optimize Custom NetBlocker List
 
 on:
   schedule:
@@ -17,7 +17,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }} # 使用token进行检出
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -30,71 +30,56 @@ jobs:
           cd cleaner-adblock
           npm install puppeteer
 
-      - name: Download Hagezi Mini/Medium Lists
+      - name: Download NetBlocker List
         run: |
-          # 下载三个指定的精简版规则列表
-          curl -sSL "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.mini.txt" -o hagezi-pro-mini-raw.txt
-          curl -sSL "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/tif.medium.txt" -o hagezi-tif-medium-raw.txt
-          curl -sSL "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/spam-tlds.txt" -o hagezi-spam-tlds-raw.txt
+          # 下载您的自定义规则列表
+          curl -sSL "https://raw.githubusercontent.com/Pattern-max/NetBlocker/main/list/NetBlocker.txt" -o NetBlocker-raw.txt
           echo "📥 原始规则数统计："
-          echo "  Pro mini: $(grep -c '^[^!#]' hagezi-pro-mini-raw.txt)"
-          echo "  TIF medium: $(grep -c '^[^!#]' hagezi-tif-medium-raw.txt)"
-          echo "  Spam TLDs: $(grep -c '^[^!#]' hagezi-spam-tlds-raw.txt)"
+          echo "  NetBlocker: $(grep -c '^[^!#]' NetBlocker-raw.txt) 条规则"
 
-      - name: Optimize Lists with Cleaner-adblock
+      - name: Optimize List with Cleaner-adblock
         run: |
           cd cleaner-adblock
-          echo "🔧 开始优化规则列表 (此步骤可能需要几分钟)..."
-
-          # 优化 Pro mini 列表
-          if [ -f ../hagezi-pro-mini-raw.txt ]; then
-            node cleaner-adblock.js ../hagezi-pro-mini-raw.txt --export-list --check-dig-always --ignore-similar --concurrency=6
-            find . -maxdepth 1 -name "*pro-mini-raw_cleaned_*.txt" -exec mv {} ../hagezi-pro-mini_optimized.txt \;
+          echo "🔧 开始优化 NetBlocker 规则列表..."
+          # 优化 NetBlocker 列表
+          if [ -f ../NetBlocker-raw.txt ]; then
+            node cleaner-adblock.js ../NetBlocker-raw.txt --export-list --check-dig-always --ignore-similar --concurrency=6
+            # 查找并移动优化后的文件
+            find . -maxdepth 1 -name "*NetBlocker-raw_cleaned_*.txt" -exec mv {} ../NetBlocker_optimized.txt \;
           fi
-
-          # 优化 TIF medium 列表
-          if [ -f ../hagezi-tif-medium-raw.txt ]; then
-            node cleaner-adblock.js ../hagezi-tif-medium-raw.txt --export-list --check-dig-always --ignore-similar --concurrency=6
-            find . -maxdepth 1 -name "*tif-medium-raw_cleaned_*.txt" -exec mv {} ../hagezi-tif-medium_optimized.txt \;
-          fi
-
-          # 优化 Spam TLDs 列表 (此列表通常较小，可能无需复杂优化)
-          if [ -f ../hagezi-spam-tlds-raw.txt ]; then
-            # 对于TLD列表，我们主要移除注释和空行
-            grep -v -e '^!' -e '^#' -e '^$' ../hagezi-spam-tlds-raw.txt > ../hagezi-spam-tlds_optimized.txt
-          fi
-
           echo "✅ 优化完成。"
 
       - name: Generate Final AdGuard-compliant Rules
         run: |
-          # 为每个优化后的列表生成最终纯净规则文件
-          for prefix in pro-mini tif-medium spam-tlds; do
-            if [ -f "hagezi-${prefix}_optimized.txt" ]; then
-              # 移除注释和空行，生成最终文件
-              grep -v -e '^!' -e '^#' -e '^$' "hagezi-${prefix}_optimized.txt" > "hagezi-${prefix}_final.txt"
-              # 统计行数
-              count=$(wc -l < "hagezi-${prefix}_final.txt")
-              echo "  ${prefix}: $count 条规则"
-            fi
-          done
+          # 生成最终纯净规则文件
+          if [ -f "NetBlocker_optimized.txt" ]; then
+            # 移除注释和空行，生成最终文件
+            grep -v -e '^!' -e '^#' -e '^$' "NetBlocker_optimized.txt" > "NetBlocker_final.txt"
+            # 统计行数
+            original_count=$(grep -c '^[^!#]' NetBlocker-raw.txt)
+            final_count=$(wc -l < "NetBlocker_final.txt")
+            echo "📊 规则数统计："
+            echo "  原始规则: $original_count 条"
+            echo "  优化后规则: $final_count 条"
+            echo "  移除规则: $((original_count - final_count)) 条"
+          else
+            echo "⚠️  未找到优化后的文件，将直接处理原始文件。"
+            grep -v -e '^!' -e '^#' -e '^$' "NetBlocker-raw.txt" > "NetBlocker_final.txt"
+          fi
 
-          echo "📊 最终规则数统计："
-          ls -la hagezi-*_final.txt | awk '{print $9, ": " $5 " bytes"}'
+          # 清理中间文件
+          rm -f NetBlocker-raw.txt NetBlocker_optimized.txt 2>/dev/null || true
 
-          # 清理中间文件以节省空间
-          rm -f hagezi-*-raw.txt hagezi-*_optimized.txt
-
-      - name: Commit Optimized Files to Repository
+      - name: Commit Optimized File to Repository
         run: |
           git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          # 添加所有最终规则文件
-          git add hagezi-*_final.txt
+          # 添加最终规则文件
+          git add NetBlocker_final.txt
           if git diff --staged --quiet; then
             echo "📭 无新变更，跳过提交。"
           else
-            git commit -m "Auto-optimize: Hagezi Mini/Medium Lists $(date '+%Y-%m-%d')"
+            git commit -m "Auto-optimize: NetBlocker List $(date '+%Y-%m-%d')"
             git push
-            echo "✅ 优化后的精简规则文件已提交至仓库。"
+            echo "✅ 优化后的 NetBlocker 规则文件已提交至仓库。"
           fi
