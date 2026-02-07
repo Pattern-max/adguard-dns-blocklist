@@ -1,9 +1,9 @@
-﻿name: Optimize Hagezi DNS Lists
+name: Optimize Hagezi DNS Lists
 
 on:
   schedule:
-    - cron: '0 2 * * 1'
-  workflow_dispatch:
+    - cron: '0 2 * * 1'  # 每周一UTC 2点（北京时间10点）运行
+  workflow_dispatch:      # 支持手动触发
   push:
     branches: [ main ]
 
@@ -11,49 +11,63 @@ jobs:
   optimize:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write    # 关键：授予写入仓库的权限
 
     steps:
-    - uses: actions/checkout@v4
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }} # 使用token进行检出
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
 
-    - name: Install cleaner-adblock
-      run: |
-        git clone https://github.com/ryanbr/cleaner-adblock.git
-        cd cleaner-adblock
-        npm install puppeteer
+      - name: Install cleaner-adblock tool
+        run: |
+          git clone https://github.com/ryanbr/cleaner-adblock.git
+          cd cleaner-adblock
+          npm install puppeteer
 
-    - name: Download Lists
-      run: |
-        curl -sSL "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.txt" -o pro.txt
-        curl -sSL "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/tif.txt" -o tif.txt
+      - name: Download Hagezi Pro and TIF Lists
+        run: |
+          curl -sSL "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.txt" -o hagezi-pro-raw.txt
+          curl -sSL "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/tif.txt" -o hagezi-tif-raw.txt
+          echo "原始规则数统计："
+          echo "  Pro: $(grep -c '^[^!#]' hagezi-pro-raw.txt)"
+          echo "  TIF: $(grep -c '^[^!#]' hagezi-tif-raw.txt)"
 
-    - name: Optimize Pro List
-      run: |
-        cd cleaner-adblock
-        node cleaner-adblock.js ../pro.txt --export-list --check-dig-always --ignore-similar --concurrency=6
-        find . -name "*pro_cleaned_*.txt" -exec mv {} ../hagezi-pro_final.txt \;
+      - name: Optimize Lists with Cleaner-adblock
+        run: |
+          cd cleaner-adblock
+          # 优化Pro列表
+          node cleaner-adblock.js ../hagezi-pro-raw.txt --export-list --check-dig-always --ignore-similar --concurrency=6
+          find . -name "*pro-raw_cleaned_*.txt" -exec mv {} ../hagezi-pro_optimized.txt \;
+          # 优化TIF列表
+          node cleaner-adblock.js ../hagezi-tif-raw.txt --export-list --check-dig-always --ignore-similar --concurrency=6
+          find . -name "*tif-raw_cleaned_*.txt" -exec mv {} ../hagezi-tif_optimized.txt \;
 
-    - name: Optimize TIF List
-      run: |
-        cd cleaner-adblock
-        node cleaner-adblock.js ../tif.txt --export-list --check-dig-always --ignore-similar --concurrency=6
-        find . -name "*tif_cleaned_*.txt" -exec mv {} ../hagezi-tif_final.txt \;
+      - name: Generate Final AdGuard-compliant Rules
+        run: |
+          # 生成最终纯净规则文件（无注释、无空行）
+          grep -v -e '^!' -e '^#' -e '^$' hagezi-pro_optimized.txt > hagezi-pro_final.txt
+          grep -v -e '^!' -e '^#' -e '^$' hagezi-tif_optimized.txt > hagezi-tif_final.txt
+          echo "最终规则数："
+          echo "  Pro: $(wc -l < hagezi-pro_final.txt)"
+          echo "  TIF: $(wc -l < hagezi-tif_final.txt)"
+          # 清理中间文件
+          rm -f hagezi-*-raw.txt hagezi-*_optimized.txt
 
-    - name: Commit Results
-      run: |
-        git config --global user.name 'GitHub Actions Bot'
-        git config --global user.email 'actions@github.com'
-        git add hagezi-*_final.txt
-        if git diff --staged --quiet; then
-          echo "No changes."
-        else
-          git commit -m "Optimized: "
-          git push
-        fi
+      - name: Commit Optimized Files to Repository
+        run: |
+          git config --global user.name 'GitHub Actions Bot'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add hagezi-*_final.txt
+          if git diff --staged --quiet; then
+            echo "无新变更。"
+          else
+            git commit -m "Auto-optimize: Hagezi Pro & TIF Lists $(date '+%Y-%m-%d')"
+            git push
+            echo "✅ 优化后的规则文件已提交。"
+          fi
