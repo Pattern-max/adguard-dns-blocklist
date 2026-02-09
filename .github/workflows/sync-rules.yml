@@ -7,6 +7,11 @@ on:
   push:
     branches: [ main ]
 
+# 🔁 并发控制：防止同一分支上多个工作流同时运行
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
