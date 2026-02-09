@@ -84,7 +84,7 @@ jobs:
           TIF_COUNT=$(count_entries "rules/tif.medium.txt")
           SPAM_COUNT=$(count_entries "rules/spam-tlds.txt")
           
-          # 🔑 核心修复：彻底安全的sed命令（使用^分隔符 + 精确转义|）
+          # 🔑 核心修复：第 109 行修复（使用 ^ 分隔符 + \\| 转义）
           if [[ -f "README.md" ]]; then
             sed -i "s^\\| pro\\.mini\\.txt \\|.*^\\| pro.mini.txt \\| $CURRENT_TIME \\| $PRO_COUNT \\|^" README.md
             sed -i "s^\\| tif\\.medium\\.txt \\|.*^\\| tif.medium.txt \\| $CURRENT_TIME \\| $TIF_COUNT \\|^" README.md
@@ -93,7 +93,7 @@ jobs:
             sed -i "s^下次同步:.*^下次同步: $NEXT_SYNC^" README.md
             echo "✅ README.md 已更新"
           else
-            # 🔑 核心修复：用printf安全生成README（无EOF问题）
+            # 🔑 修复：用 printf 安全生成 README（避免 EOF 问题）
             printf '# 🛡️ AdGuard规则同步仓库\n\n本项目自动同步HaGeZi推荐的优化版AdGuard规则，适用于AdGuard Home、AdGuard for Windows/macOS等。\n\n## 📦 包含规则\n\n| 规则 | 版本 | 推荐用途 | RAW链接 |\n|------|------|----------|---------|\n| Pro列表 | mini版 | 广告、跟踪器拦截 | [点击复制](https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/main/rules/pro.mini.txt) |\n| TIF列表 | medium版 | 威胁、恶意软件拦截 | [点击复制](https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/main/rules/tif.medium.txt) |\n| Spam TLDs | 完整版 | 滥用顶级域名拦截 | [点击复制](https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/main/rules/spam-tlds.txt) |\n\n## 🚀 使用方法\n\n在AdGuard Home中：\n1. 进入 **过滤器** → **DNS封锁清单**\n2. 点击 **添加阻止列表**\n3. 粘贴上方RAW链接\n4. 设置更新间隔（建议24小时）\n\n## 🔄 同步状态\n\n**最后同步时间:** $CURRENT_TIME\n**下次同步:** $NEXT_SYNC\n**仓库活跃状态:** ✅ 正常\n\n## 📊 规则统计\n\n| 规则 | 最后更新 | 条目数 |\n|------|----------|--------|\n| pro.mini.txt | $CURRENT_TIME | $PRO_COUNT |\n| tif.medium.txt | $CURRENT_TIME | $TIF_COUNT |\n| spam-tlds.txt | $CURRENT_TIME | $SPAM_COUNT |\n\n## ⚙️ 技术细节\n\n- **同步频率:** 每小时一次\n- **失败重试:** 3次\n- **监控:** GitHub Actions自动监控\n\n---\n*自动同步自 [HaGeZi\'s DNS Blocklists](https://github.com/hagezi/dns-blocklists)*\n' > README.md
             echo "✅ README.md 已创建"
           fi
