@@ -17,143 +17,22 @@ jobs:
   sync-rules:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+      - name: Run Sync Script
+        run: bash .github/scripts/sync.sh
 
-      - name: Sync and Update Rules
-        id: sync
+      - name: Commit Changes
         run: |
-          mkdir -p rules logs
-          
-          declare -A rules=(
-            ["pro.mini"]="https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.mini.txt"
-            ["tif.medium"]="https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/tif.medium.txt"
-            ["spam-tlds"]="https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/spam-tlds.txt"
-          )
-          
-          echo "🔄 开始同步规则..."
-          any_rule_updated=false
-          for rule in "${!rules[@]}"; do
-            echo "📥 同步 ${rule}..."
-            url="${rules[$rule]}"
-            output_file="rules/${rule}.txt"
-            temp_file="rules/${rule}.tmp.txt"
-            
-            success=false
-            for i in {1..3}; do
-              if curl -s -L --retry 2 --max-time 30 -o "$temp_file" "$url" && [[ -s "$temp_file" ]]; then
-                success=true
-                break
-              else
-                echo "⚠️ 第 $i 次尝试失败，5秒后重试..."
-                sleep 5
-              fi
-            done
-            
-            if [[ "$success" != true ]]; then
-              echo "❌ 无法下载 ${rule}，跳过"
-              rm -f "$temp_file" 2>/dev/null
-              continue
-            fi
-            
-            if [[ -f "$output_file" ]] && cmp -s "$output_file" "$temp_file"; then
-              echo "✅ ${rule}: 无变化"
-              rm "$temp_file"
-            else
-              echo "✨ ${rule}: 检测到更新"
-              mv "$temp_file" "$output_file"
-              any_rule_updated=true
-            fi
-          done
-          
-          CURRENT_TIME=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
-          NEXT_SYNC=$(date -u -d '+1 hour' +"%Y-%m-%d %H:%M:%S UTC")
-          
-          count_entries() {
-            [[ -f "$1" ]] && grep -v -E '^[[:space:]]*!|^[[:space:]]*$' "$1" | wc -l | tr -d ' ' || echo "0"
-          }
-          
-          PRO_COUNT=$(count_entries "rules/pro.mini.txt")
-          TIF_COUNT=$(count_entries "rules/tif.medium.txt")
-          SPAM_COUNT=$(count_entries "rules/spam-tlds.txt")
-          
-          # 🔑 核心修复：第 109 行修复（使用 ^ 分隔符 + \\| 转义）
-          if [[ -f "README.md" ]]; then
-            sed -i "s^\\| pro\\.mini\\.txt \\|.*^\\| pro.mini.txt \\| $CURRENT_TIME \\| $PRO_COUNT \\|^" README.md
-            sed -i "s^\\| tif\\.medium\\.txt \\|.*^\\| tif.medium.txt \\| $CURRENT_TIME \\| $TIF_COUNT \\|^" README.md
-            sed -i "s^\\| spam-tlds\\.txt \\|.*^\\| spam-tlds.txt \\| $CURRENT_TIME \\| $SPAM_COUNT \\|^" README.md
-            sed -i "s^最后同步时间:.*^最后同步时间: $CURRENT_TIME^" README.md
-            sed -i "s^下次同步:.*^下次同步: $NEXT_SYNC^" README.md
-            echo "✅ README.md 已更新"
-          else
-            # 🔑 修复：用 printf 安全生成 README（避免 EOF 问题）
-            printf '# 🛡️ AdGuard规则同步仓库\n\n本项目自动同步HaGeZi推荐的优化版AdGuard规则，适用于AdGuard Home、AdGuard for Windows/macOS等。\n\n## 📦 包含规则\n\n| 规则 | 版本 | 推荐用途 | RAW链接 |\n|------|------|----------|---------|\n| Pro列表 | mini版 | 广告、跟踪器拦截 | [点击复制](https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/main/rules/pro.mini.txt) |\n| TIF列表 | medium版 | 威胁、恶意软件拦截 | [点击复制](https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/main/rules/tif.medium.txt) |\n| Spam TLDs | 完整版 | 滥用顶级域名拦截 | [点击复制](https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/main/rules/spam-tlds.txt) |\n\n## 🚀 使用方法\n\n在AdGuard Home中：\n1. 进入 **过滤器** → **DNS封锁清单**\n2. 点击 **添加阻止列表**\n3. 粘贴上方RAW链接\n4. 设置更新间隔（建议24小时）\n\n## 🔄 同步状态\n\n**最后同步时间:** $CURRENT_TIME\n**下次同步:** $NEXT_SYNC\n**仓库活跃状态:** ✅ 正常\n\n## 📊 规则统计\n\n| 规则 | 最后更新 | 条目数 |\n|------|----------|--------|\n| pro.mini.txt | $CURRENT_TIME | $PRO_COUNT |\n| tif.medium.txt | $CURRENT_TIME | $TIF_COUNT |\n| spam-tlds.txt | $CURRENT_TIME | $SPAM_COUNT |\n\n## ⚙️ 技术细节\n\n- **同步频率:** 每小时一次\n- **失败重试:** 3次\n- **监控:** GitHub Actions自动监控\n\n---\n*自动同步自 [HaGeZi\'s DNS Blocklists](https://github.com/hagezi/dns-blocklists)*\n' > README.md
-            echo "✅ README.md 已创建"
-          fi
-          
-          cat > sync-status.txt << EOF
-最后同步: $CURRENT_TIME
-下次同步: $NEXT_SYNC
-规则统计:
-- pro.mini.txt: $PRO_COUNT 条
-- tif.medium.txt: $TIF_COUNT 条
-- spam-tlds.txt: $SPAM_COUNT 条
-生成于: $CURRENT_TIME
-EOF
-          
-          echo "[$(date -u +'%Y-%m-%d %H:%M:%S UTC')] 同步完成" >> "logs/sync-$(date -u +'%Y-%m-%d').log"
-          
-          if [[ "$any_rule_updated" = true ]]; then
-            echo "update_type=rules_and_status" >> "$GITHUB_OUTPUT"
-          else
-            echo "update_type=status_only" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Commit and Push Changes
-        if: steps.sync.outputs.update_type == 'rules_and_status' || steps.sync.outputs.update_type == 'status_only'
-        run: |
-          git config user.name 'GitHub Actions Bot'
-          git config user.email 'actions@github.com'
-          git add rules/ README.md sync-status.txt logs/
-          
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+          git add -A
           if git diff --cached --quiet; then
-            echo "ℹ️ 无内容更改，跳过提交"
+            echo "ℹ️ No changes, skipping commit"
             exit 0
           fi
-          
-          COMMIT_MSG="$(if [[ "${{ steps.sync.outputs.update_type }}" == "rules_and_status" ]]; then echo "🤖 同步规则更新"; else echo "📊 更新同步状态"; fi) - $(date -u +'%Y-%m-%d %H:%M UTC')"
-          git commit -m "$COMMIT_MSG" && git push || echo "⚠️ 提交/推送失败"
-
-      - name: Generate Summary Report
-        if: always()
-        run: |
-          echo "## 📊 同步报告" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          if [[ -f "sync-status.txt" ]]; then
-            LAST_SYNC=$(grep "最后同步:" sync-status.txt | cut -d':' -f2- | xargs)
-            NEXT_SYNC=$(grep "下次同步:" sync-status.txt | cut -d':' -f2- | xargs)
-            PRO_COUNT=$(grep "pro.mini.txt:" sync-status.txt | grep -o '[0-9]\+' | head -1)
-            TIF_COUNT=$(grep "tif.medium.txt:" sync-status.txt | grep -o '[0-9]\+' | head -1)
-            SPAM_COUNT=$(grep "spam-tlds.txt:" sync-status.txt | grep -o '[0-9]\+' | head -1)
-            
-            echo "- **✅ 最后同步**: $LAST_SYNC" >> $GITHUB_STEP_SUMMARY
-            echo "- **🕐 下次同步**: $NEXT_SYNC" >> $GITHUB_STEP_SUMMARY
-            echo "- **📦 Pro Mini**: $PRO_COUNT 条" >> $GITHUB_STEP_SUMMARY
-            echo "- **🛡️ TIF Medium**: $TIF_COUNT 条" >> $GITHUB_STEP_SUMMARY
-            echo "- **📧 Spam TLDs**: $SPAM_COUNT 条" >> $GITHUB_STEP_SUMMARY
-            echo "- **🔄 更新类型**: ${{ steps.sync.outputs.update_type }}" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ 状态文件缺失" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📁 仓库变更" >> $GITHUB_STEP_SUMMARY
-          git status --short 2>/dev/null | head -5 >> $GITHUB_STEP_SUMMARY || echo "无变更" >> $GITHUB_STEP_SUMMARY
+          git commit -m "🤖 Sync rules update - $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git push
