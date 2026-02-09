@@ -1,0 +1,34 @@
+name: Keep Repository Active
+on:
+  schedule:
+    # 每周一、三、五运行
+    - cron: '0 0 * * 1,3,5'
+  workflow_dispatch:
+
+jobs:
+  maintain-activity:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Update Activity Log
+        run: |
+          # 创建或更新活跃日志
+          mkdir -p logs
+          echo "Last activity: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" > logs/activity.log
+          
+          # 如果有README，更新其中的时间戳
+          if [[ -f README.md ]]; then
+            sed -i "s/Last active:.*/Last active: $(date -u +'%Y-%m-%d %H:%M:%S UTC')/" README.md
+          fi
+          
+          # 提交更新
+          git config --global user.name 'GitHub Actions Bot'
+          git config --global user.email 'actions@github.com'
+          git add logs/activity.log
+          if [[ -f README.md ]]; then
+            git add README.md
+          fi
+          git commit -m "🔧 Keep repository active - $(date -u +'%Y-%m-%d')" || echo "No changes"
+          git push
