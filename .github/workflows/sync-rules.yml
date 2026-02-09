@@ -186,7 +186,7 @@ EOF
 
       # ========== 关键修复在此处 ==========
       - name: Commit and Push Changes
-        if: ${{ fromJSON(steps.sync.outputs.update_type || 'null') }}
+        if: ${{ steps.sync.outputs.update_type == 'rules_and_status' || steps.sync.outputs.update_type == 'status_only' }}
         run: |
           echo "准备提交更改..."
           
@@ -208,6 +208,12 @@ EOF
             else
               commit_msg="📊 更新同步状态 - $(date -u +'%Y-%m-%d %H:%M')"
             fi
+            
+            # 提交并推送
+            git commit -m "$commit_msg"
+            git push
+            echo "更改已提交并推送。"
+          fi
             
             # 提交并推送
             git commit -m "$commit_msg"
