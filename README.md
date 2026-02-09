@@ -5,9 +5,9 @@
 
 | 规则 | 版本 | 推荐用途 | RAW链接 |
 |------|------|----------|---------|
-| Pro列表 | mini版 | 广告、跟踪器拦截 | [点击复制](https://raw.githubusercontent.com/${{ github.repository }}/main/rules/pro.mini.txt) |
-| TIF列表 | medium版 | 威胁、恶意软件拦截 | [点击复制](https://raw.githubusercontent.com/${{ github.repository }}/main/rules/tif.medium.txt) |
-| Spam TLDs | 完整版 | 滥用顶级域名拦截 | [点击复制](https://raw.githubusercontent.com/${{ github.repository }}/main/rules/spam-tlds.txt) |
+| Pro列表 | mini版 | 广告、跟踪器拦截 | [点击复制](https://raw.githubusercontent.com/Pattern-max/adguard-rules-sync/main/rules/pro.mini.txt) |
+| TIF列表 | medium版 | 威胁、恶意软件拦截 | [点击复制](https://raw.githubusercontent.com/Pattern-max/adguard-rules-sync/main/rules/tif.medium.txt) |
+| Spam TLDs | 完整版 | 滥用顶级域名拦截 | [点击复制](https://raw.githubusercontent.com/Pattern-max/adguard-rules-sync/main/rules/spam-tlds.txt) |
 
 🚀 使用方法
 
