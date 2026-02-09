@@ -1,8 +1,7 @@
-# 🛡️ AdGuard规则同步仓库
-
+🛡️ AdGuard规则同步仓库
 本项目自动同步HaGeZi推荐的优化版AdGuard规则，适用于AdGuard Home。
 
-## 📦 包含规则
+📦 包含规则
 
 | 规则 | 版本 | 推荐用途 | RAW链接 |
 |------|------|----------|---------|
@@ -10,7 +9,7 @@
 | TIF列表 | medium版 | 威胁、恶意软件拦截 | [点击复制](https://raw.githubusercontent.com/${{ github.repository }}/main/rules/tif.medium.txt) |
 | Spam TLDs | 完整版 | 滥用顶级域名拦截 | [点击复制](https://raw.githubusercontent.com/${{ github.repository }}/main/rules/spam-tlds.txt) |
 
-## 🚀 使用方法
+🚀 使用方法
 
 在AdGuard Home中：
 1. 进入 **过滤器** → **DNS封锁清单**
@@ -18,7 +17,7 @@
 3. 粘贴上方RAW链接
 4. 设置更新间隔（建议24小时）
 
-## 🔄 同步状态
+🔄 同步状态
 
 **仓库活跃状态:** ✅ 正常
 
