@@ -13,6 +13,9 @@ permissions:
 jobs:
   sync-rules:
     runs-on: ubuntu-latest
+    outputs:
+      updated: ${{ steps.sync.outputs.updated }}
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -25,6 +28,7 @@ jobs:
           python-version: '3.11'
 
       - name: Sync Rules
+        id: sync
         run: |
           # 创建规则目录
           mkdir -p rules logs
@@ -52,6 +56,13 @@ jobs:
               fi
             done
             
+            # 检查文件是否存在且非空
+            if [[ ! -s "rules/${rule}.tmp.txt" ]]; then
+              echo "Warning: Downloaded file for ${rule} is empty or missing!"
+              rm -f "rules/${rule}.tmp.txt"
+              continue
+            fi
+            
             # 比较文件是否有变化
             if [[ -f "rules/${rule}.txt" ]] && cmp -s "rules/${rule}.txt" "rules/${rule}.tmp.txt"; then
               echo "No changes for ${rule}"
@@ -76,8 +87,12 @@ jobs:
             git add rules/ update-timestamp.txt
             git commit -m "🤖 Sync rules - $(date -u +'%Y-%m-%d %H:%M')"
             git push
+            
+            # 设置输出变量
+            echo "updated=true" >> $GITHUB_OUTPUT
           else
             echo "No updates needed"
+            echo "updated=false" >> $GITHUB_OUTPUT
           fi
           
           # 记录日志
@@ -89,6 +104,152 @@ jobs:
           echo "## 📊 Sync Report" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **Last Sync:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
-          echo "- **Pro Mini Rules:** $(wc -l < rules/pro.mini.txt 2>/dev/null || echo '0') entries" >> $GITHUB_STEP_SUMMARY
-          echo "- **TIF Medium Rules:** $(wc -l < rules/tif.medium.txt 2>/dev/null || echo '0') entries" >> $GITHUB_STEP_SUMMARY
-          echo "- **Spam TLDs:** $(wc -l < rules/spam-tlds.txt 2>/dev/null || echo '0') entries" >> $GITHUB_STEP_SUMMARY
+          
+          # 更准确的条目统计（排除注释行和空行）
+          count_entries() {
+            local file=$1
+            if [[ -f "$file" ]]; then
+              grep -v -E '^[[:space:]]*!|^[[:space:]]*$' "$file" | wc -l || echo "0"
+            else
+              echo "0"
+            fi
+          }
+          
+          PRO_COUNT=$(count_entries "rules/pro.mini.txt")
+          TIF_COUNT=$(count_entries "rules/tif.medium.txt")
+          SPAM_COUNT=$(count_entries "rules/spam-tlds.txt")
+          
+          echo "- **Pro Mini Rules:** $PRO_COUNT entries" >> $GITHUB_STEP_SUMMARY
+          echo "- **TIF Medium Rules:** $TIF_COUNT entries" >> $GITHUB_STEP_SUMMARY
+          echo "- **Spam TLDs:** $SPAM_COUNT entries" >> $GITHUB_STEP_SUMMARY
+          
+          # 生成下次同步时间（当前时间+1小时）
+          NEXT_SYNC=$(date -u -d '+1 hour' +"%Y-%m-%d %H:%M:%S UTC")
+          echo "- **Next Sync:** $NEXT_SYNC" >> $GITHUB_STEP_SUMMARY
+
+      - name: Update README Status
+        if: always()
+        run: |
+          # 获取当前时间
+          CURRENT_TIME=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          NEXT_SYNC=$(date -u -d '+1 hour' +"%Y-%m-%d %H:%M:%S UTC")
+          
+          # 统计实际条目数（排除注释行和空行）
+          count_entries() {
+            local file=$1
+            if [[ -f "$file" ]]; then
+              grep -v -E '^[[:space:]]*!|^[[:space:]]*$' "$file" | wc -l || echo "0"
+            else
+              echo "0"
+            fi
+          }
+          
+          PRO_COUNT=$(count_entries "rules/pro.mini.txt")
+          TIF_COUNT=$(count_entries "rules/tif.medium.txt")
+          SPAM_COUNT=$(count_entries "rules/spam-tlds.txt")
+          
+          # 更新README.md文件
+          if [[ -f "README.md" ]]; then
+            # 创建临时文件
+            cp README.md README.md.tmp
+            
+            # 更新同步状态部分
+            sed -i "s/最后同步时间:.*/最后同步时间: $CURRENT_TIME/" README.md.tmp
+            sed -i "s/下次同步:.*/下次同步: $NEXT_SYNC/" README.md.tmp
+            
+            # 更新规则统计表格
+            sed -i "s/| pro.mini.txt |.*|/| pro.mini.txt | $CURRENT_TIME | $PRO_COUNT |/" README.md.tmp
+            sed -i "s/| tif.medium.txt |.*|/| tif.medium.txt | $CURRENT_TIME | $TIF_COUNT |/" README.md.tmp
+            sed -i "s/| spam-tlds.txt |.*|/| spam-tlds.txt | $CURRENT_TIME | $SPAM_COUNT |/" README.md.tmp
+            
+            # 检查是否有变化
+            if ! cmp -s README.md README.md.tmp; then
+              echo "Updating README.md with new status"
+              mv README.md.tmp README.md
+              
+              # 提交更新
+              git config --global user.name 'GitHub Actions Bot'
+              git config --global user.email 'actions@github.com'
+              git add README.md
+              git commit -m "📊 Update sync status - $(date -u +'%Y-%m-%d %H:%M')"
+              git push
+            else
+              echo "README.md already up to date"
+              rm README.md.tmp
+            fi
+          else
+            echo "README.md not found, creating one..."
+            # 创建基本的README.md
+            cat > README.md << 'EOF'
+# 🛡️ AdGuard规则同步仓库
+
+本项目自动同步HaGeZi推荐的优化版AdGuard规则，适用于AdGuard Home。
+
+## 📦 包含规则
+
+| 规则 | 版本 | 推荐用途 | RAW链接 |
+|------|------|----------|---------|
+| Pro列表 | mini版 | 广告、跟踪器拦截 | [点击复制](https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/rules/pro.mini.txt) |
+| TIF列表 | medium版 | 威胁、恶意软件拦截 | [点击复制](https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/rules/tif.medium.txt) |
+| Spam TLDs | 完整版 | 滥用顶级域名拦截 | [点击复制](https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/rules/spam-tlds.txt) |
+
+## 🚀 使用方法
+
+在AdGuard Home中：
+1. 进入 **过滤器** → **DNS封锁清单**
+2. 点击 **添加阻止列表**
+3. 粘贴上方RAW链接
+4. 设置适当的更新间隔（建议24小时）
+
+## 🔄 同步状态
+
+**最后同步时间:** $CURRENT_TIME  
+**下次同步:** $NEXT_SYNC  
+**仓库活跃状态:** ✅ 正常  
+
+## 📊 规则统计
+
+| 规则 | 最后更新 | 条目数 |
+|------|----------|--------|
+| pro.mini.txt | $CURRENT_TIME | $PRO_COUNT |
+| tif.medium.txt | $CURRENT_TIME | $TIF_COUNT |
+| spam-tlds.txt | $CURRENT_TIME | $SPAM_COUNT |
+
+## ⚙️ 技术细节
+
+- **同步频率:** 每小时一次
+- **失败重试:** 3次
+- **监控:** GitHub Actions自动监控
+
+---
+*自动同步自 [HaGeZi's DNS Blocklists](https://github.com/hagezi/dns-blocklists)*
+EOF
+            
+            # 替换占位符
+            sed -i "s/\$CURRENT_TIME/$CURRENT_TIME/g" README.md
+            sed -i "s/\$NEXT_SYNC/$NEXT_SYNC/g" README.md
+            sed -i "s/\$PRO_COUNT/$PRO_COUNT/g" README.md
+            sed -i "s/\$TIF_COUNT/$TIF_COUNT/g" README.md
+            sed -i "s/\$SPAM_COUNT/$SPAM_COUNT/g" README.md
+            
+            # 提交新README
+            git config --global user.name 'GitHub Actions Bot'
+            git config --global user.email 'actions@github.com'
+            git add README.md
+            git commit -m "📝 Create README with sync status"
+            git push
+          fi
+          
+          # 更新状态文件
+          echo "Sync Status" > sync-status.txt
+          echo "===========" >> sync-status.txt
+          echo "Last Sync: $CURRENT_TIME" >> sync-status.txt
+          echo "Next Sync: $NEXT_SYNC" >> sync-status.txt
+          echo "" >> sync-status.txt
+          echo "Rule Statistics" >> sync-status.txt
+          echo "===============" >> sync-status.txt
+          echo "pro.mini.txt: $PRO_COUNT entries" >> sync-status.txt
+          echo "tif.medium.txt: $TIF_COUNT entries" >> sync-status.txt
+          echo "spam-tlds.txt: $SPAM_COUNT entries" >> sync-status.txt
+          echo "" >> sync-status.txt
+          echo "Generated at: $CURRENT_TIME" >> sync-status.txt
