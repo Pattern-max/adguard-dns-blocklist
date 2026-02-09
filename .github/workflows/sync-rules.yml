@@ -186,7 +186,7 @@ EOF
 
       # ========== 关键修复在此处 ==========
       - name: Commit and Push Changes
-        if: ${{ steps.sync.outputs.update_type != '' }}
+        if: ${{ fromJSON(steps.sync.outputs.update_type || 'null') }}
         run: |
           echo "准备提交更改..."
           
@@ -201,7 +201,7 @@ EOF
           if git diff --cached --quiet; then
             echo "没有检测到更改，跳过提交。"
           else
-            # 根据更新类型生成提交信息
+            # 安全地获取更新类型
             UPDATE_TYPE="${{ steps.sync.outputs.update_type }}"
             if [[ "$UPDATE_TYPE" == "rules_and_status" ]]; then
               commit_msg="🤖 同步规则并更新状态 - $(date -u +'%Y-%m-%d %H:%M')"
