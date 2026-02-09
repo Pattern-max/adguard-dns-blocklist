@@ -4,28 +4,17 @@ import dns.resolver
 import time
 import os
 from typing import List, Set
+from datetime import timedelta
 
-# ========== 配置区域 (已按要求更新) ==========
+# ========== 配置区域 ==========
 UPSTREAM_RULES = [
-    "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.mini.txt",  # ✅ 正确规则源
-    "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/tif.medium.txt"  # ✅ 正确规则源
+    "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.mini.txt",
+    "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/tif.medium.txt"
 ]
-
-DOMESTIC_DNS = [
-    "114.114.114.114",  # 114 DNS
-    "180.76.76.76",     # 阿里 DNS
-    "223.5.5.5"          # 腾讯 DNS
-]
-
-FOREIGN_DNS = [
-    "8.8.8.8",           # Google DNS
-    "1.1.1.1",           # Cloudflare DNS
-    "9.9.9.9"            # Quad9 DNS
-]
-
+DOMESTIC_DNS = ["114.114.114.114", "180.76.76.76", "223.5.5.5"]
+FOREIGN_DNS = ["8.8.8.8", "1.1.1.1", "9.9.9.9"]
 OUTPUT_FILE = "final_rules.txt"
 
-# ========== 核心逻辑 (已优化进度写入) ==========
 def download_rules(urls: List[str]) -> Set[str]:
     domains = set()
     for url in urls:
@@ -38,7 +27,7 @@ def download_rules(urls: List[str]) -> Set[str]:
                 if match := re.match(r'\|\|([^/^]+)\^', line):
                     domains.add(match.group(1))
         except Exception as e:
-            print(f"⚠️ 从 {url} 下载失败: {str(e)}")
+            print(f"⚠️ 下载失败 {url}: {str(e)}")
     return domains
 
 def is_domain_resolvable(domain: str, dns_servers: List[str]) -> bool:
@@ -53,39 +42,50 @@ def is_domain_resolvable(domain: str, dns_servers: List[str]) -> bool:
     return False
 
 def main():
-    print("🚀 正在下载上游规则...")
+    print("🚀 [INFO] 开始下载上游规则...")
     all_domains = download_rules(UPSTREAM_RULES)
-    print(f"✅ 已获取 {len(all_domains)} 个域名")
+    total = len(all_domains)
+    print(f"✅ [INFO] 成功获取 {total:,} 个域名 | 规则源: pro.mini.txt + tif.medium.txt")
     
     valid_domains = []
-    total = len(all_domains)
+    start_time = time.time()
+    last_log = start_time
+    log_interval = 100  # 每100个域名输出详细进度
+    
     for i, domain in enumerate(all_domains, 1):
-        # DNS验证逻辑
-        if is_domain_resolvable(domain, DOMESTIC_DNS):
-            valid_domains.append(domain)
-        elif is_domain_resolvable(domain, FOREIGN_DNS):
+        # DNS验证
+        if is_domain_resolvable(domain, DOMESTIC_DNS) or is_domain_resolvable(domain, FOREIGN_DNS):
             valid_domains.append(domain)
         
-        # >>>>> 关键优化：实时写入进度 <<<<<
-        try:
-            with open('.progress', 'w') as f:
-                f.write(f"{i},{total},{int(time.time())}\n")
-        except:
-            pass  # 忽略写入错误，不影响主流程
-        # <<<<< 进度写入结束 >>>>>
+        # >>>>> GitHub Actions 友好日志输出（关键！）<<<<<
+        if i % log_interval == 0 or i == total:
+            elapsed = time.time() - start_time
+            speed = i / elapsed if elapsed > 0 else 0
+            remaining = (total - i) / speed if speed > 0 else 0
+            eta = str(timedelta(seconds=int(remaining)))
+            
+            # GitHub Actions 专用格式化日志（带时间戳+关键指标）
+            print(f"⏳ [PROGRESS] {i:,}/{total:,} | {i/total*100:.1f}% | "
+                  f"Speed: {speed:.1f} domains/s | ETA: {eta} | "
+                  f"Valid: {len(valid_domains):,} | Invalid: {i - len(valid_domains):,}")
+        # <<<<< 日志输出结束 >>>>>
         
         if i % 10 == 0:
             time.sleep(0.1)
-        print(f"🔍 检查域名 [{i}/{total}]: {domain} {'✅' if domain in valid_domains else '❌'}", end='\r')
     
-    print(f"\n✅ 有效域名: {len(valid_domains)} / {total} (过滤 {total - len(valid_domains)} 个无效域名)")
+    # 最终统计
+    print(f"\n✅ [SUMMARY] 有效域名: {len(valid_domains):,} / {total:,} "
+          f"({len(valid_domains)/total*100:.1f}%)")
+    print(f"✅ [SUMMARY] 过滤无效域名: {total - len(valid_domains):,} "
+          f"({(total - len(valid_domains))/total*100:.1f}%)")
     
+    # 生成规则文件
     new_rules = [f'||{domain}^' for domain in valid_domains]
     with open(OUTPUT_FILE, 'w') as f:
         f.write("\n".join(new_rules))
     
-    print(f"📝 规则已生成: {OUTPUT_FILE} (共 {len(new_rules)} 条)")
-    print("✅ 任务完成！")
+    print(f"📝 [OUTPUT] 规则文件已生成: {OUTPUT_FILE} ({len(new_rules):,} 条)")
+    print("✅ [SUCCESS] 任务完成！GitHub Actions 将自动提交结果")
 
 if __name__ == "__main__":
     main()
