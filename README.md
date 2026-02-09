@@ -1,6 +1,6 @@
 # 🛡️ AdGuard规则同步仓库
 
-本项目自动同步HaGeZi推荐的优化版AdGuard规则，适用于AdGuard Home。
+本项目自动同步HaGeZi推荐的优化版AdGuard规则，适用于安卓AdGuard与AdGuard Home。
 
 ## 📦 包含规则
 
