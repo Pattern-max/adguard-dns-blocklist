@@ -114,15 +114,15 @@ jobs:
             cat > README.md << EOF
 # 🛡️ AdGuard规则同步仓库
 
-本项目自动同步HaGeZi推荐的优化版AdGuard规则，特别适用于安卓AdGuard。
+本项目自动同步HaGeZi推荐的优化版AdGuard规则，适用于AdGuard Home。
 
 ## 📦 包含规则
 
 | 规则 | 版本 | 推荐用途 | RAW链接 |
 |------|------|----------|---------|
-| Pro列表 | mini版 | 广告、跟踪器拦截 | [点击复制](https://raw.githubusercontent.com/Pattern-max/adguard-rules-sync/main/rules/pro.mini.txt) |
-| TIF列表 | medium版 | 威胁、恶意软件拦截 | [点击复制](https://raw.githubusercontent.com/Pattern-max/adguard-rules-sync/main/rules/tif.medium.txt) |
-| Spam TLDs | 完整版 | 滥用顶级域名拦截 | [点击复制](https://raw.githubusercontent.com/Pattern-max/adguard-rules-sync/main/rules/spam-tlds.txt) |
+| Pro列表 | mini版 | 广告、跟踪器拦截 | [点击复制](https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/rules/pro.mini.txt) |
+| TIF列表 | medium版 | 威胁、恶意软件拦截 | [点击复制](https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/rules/tif.medium.txt) |
+| Spam TLDs | 完整版 | 滥用顶级域名拦截 | [点击复制](https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/rules/spam-tlds.txt) |
 
 ## 🚀 使用方法
 
@@ -185,7 +185,7 @@ EOF
           fi
 
       - name: Commit and Push Changes
-        if: steps.sync.outputs.update_type
+        if: ${{ steps.sync.outputs.update_type }}
         run: |
           echo "准备提交更改..."
           
