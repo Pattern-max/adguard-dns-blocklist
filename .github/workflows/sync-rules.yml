@@ -18,9 +18,6 @@ permissions:
 jobs:
   sync-rules:
     runs-on: ubuntu-latest
-    outputs:
-      updated: ${{ steps.sync.outputs.updated }}
-    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -32,10 +29,10 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Sync Rules
+      - name: Sync and Update
         id: sync
         run: |
-          # 创建规则目录
+          # 创建目录
           mkdir -p rules logs
           
           # 定义规则源
@@ -45,97 +42,46 @@ jobs:
             ["spam-tlds"]="https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/spam-tlds.txt"
           )
           
-          # 同步每个规则
-          updated=false
+          # 1. 同步规则文件
+          echo "开始同步规则..."
+          any_rule_updated=false
           for rule in "${!rules[@]}"; do
-            echo "Syncing ${rule}..."
+            echo "正在同步 ${rule}..."
             url="${rules[$rule]}"
+            output_file="rules/${rule}.txt"
+            temp_file="rules/${rule}.tmp.txt"
             
             # 下载规则，带重试机制
+            success=false
             for i in {1..3}; do
-              if curl -s -L --retry 3 --max-time 30 -o "rules/${rule}.tmp.txt" "$url"; then
+              if curl -s -L --retry 2 --max-time 30 -o "$temp_file" "$url" && [[ -s "$temp_file" ]]; then
+                success=true
                 break
               else
-                echo "Attempt $i failed, retrying..."
+                echo "第 $i 次尝试失败，5秒后重试..."
                 sleep 5
               fi
             done
             
-            # 检查文件是否存在且非空
-            if [[ ! -s "rules/${rule}.tmp.txt" ]]; then
-              echo "Warning: Downloaded file for ${rule} is empty or missing!"
-              rm -f "rules/${rule}.tmp.txt"
+            if [[ "$success" != true ]]; then
+              echo "错误: 无法下载 ${rule} 规则，跳过此规则。"
+              rm -f "$temp_file"
               continue
             fi
             
             # 比较文件是否有变化
-            if [[ -f "rules/${rule}.txt" ]] && cmp -s "rules/${rule}.txt" "rules/${rule}.tmp.txt"; then
-              echo "No changes for ${rule}"
-              rm "rules/${rule}.tmp.txt"
+            if [[ -f "$output_file" ]] && cmp -s "$output_file" "$temp_file"; then
+              echo "${rule}: 无变化"
+              rm "$temp_file"
             else
-              echo "Updating ${rule}"
-              mv "rules/${rule}.tmp.txt" "rules/${rule}.txt"
-              updated=true
+              echo "${rule}: 检测到更新"
+              mv "$temp_file" "$output_file"
+              any_rule_updated=true
             fi
           done
           
-          # 如果有更新，提交更改
-          if [[ "$updated" = true ]]; then
-            # 更新同步时间戳
-            date -u +"%Y-%m-%d %H:%M:%S UTC" > update-timestamp.txt
-            
-            # 配置git
-            git config --global user.name 'GitHub Actions Bot'
-            git config --global user.email 'actions@github.com'
-            
-            # 添加、提交和推送
-            git add rules/ update-timestamp.txt
-            git commit -m "🤖 Sync rules - $(date -u +'%Y-%m-%d %H:%M')"
-            git push
-            
-            # 设置输出变量
-            echo "updated=true" >> $GITHUB_OUTPUT
-          else
-            echo "No updates needed"
-            echo "updated=false" >> $GITHUB_OUTPUT
-          fi
-          
-          # 记录日志
-          echo "Sync completed at $(date)" >> logs/sync-$(date +%Y-%m-%d).log
-
-      - name: Generate Status Report
-        if: always()
-        run: |
-          echo "## 📊 Sync Report" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Last Sync:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
-          
-          # 更准确的条目统计（排除注释行和空行）
-          count_entries() {
-            local file=$1
-            if [[ -f "$file" ]]; then
-              grep -v -E '^[[:space:]]*!|^[[:space:]]*$' "$file" | wc -l || echo "0"
-            else
-              echo "0"
-            fi
-          }
-          
-          PRO_COUNT=$(count_entries "rules/pro.mini.txt")
-          TIF_COUNT=$(count_entries "rules/tif.medium.txt")
-          SPAM_COUNT=$(count_entries "rules/spam-tlds.txt")
-          
-          echo "- **Pro Mini Rules:** $PRO_COUNT entries" >> $GITHUB_STEP_SUMMARY
-          echo "- **TIF Medium Rules:** $TIF_COUNT entries" >> $GITHUB_STEP_SUMMARY
-          echo "- **Spam TLDs:** $SPAM_COUNT entries" >> $GITHUB_STEP_SUMMARY
-          
-          # 生成下次同步时间（当前时间+1小时）
-          NEXT_SYNC=$(date -u -d '+1 hour' +"%Y-%m-%d %H:%M:%S UTC")
-          echo "- **Next Sync:** $NEXT_SYNC" >> $GITHUB_STEP_SUMMARY
-
-      - name: Update README Status
-        if: always()
-        run: |
-          # 获取当前时间
+          # 2. 无论规则是否更新，都准备生成最新状态
+          echo "准备更新状态信息..."
           CURRENT_TIME=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
           NEXT_SYNC=$(date -u -d '+1 hour' +"%Y-%m-%d %H:%M:%S UTC")
           
@@ -153,39 +99,19 @@ jobs:
           TIF_COUNT=$(count_entries "rules/tif.medium.txt")
           SPAM_COUNT=$(count_entries "rules/spam-tlds.txt")
           
-          # 更新README.md文件
+          # 3. 更新或创建 README.md
           if [[ -f "README.md" ]]; then
-            # 创建临时文件
-            cp README.md README.md.tmp
-            
-            # 更新同步状态部分
-            sed -i "s/最后同步时间:.*/最后同步时间: $CURRENT_TIME/" README.md.tmp
-            sed -i "s/下次同步:.*/下次同步: $NEXT_SYNC/" README.md.tmp
-            
-            # 更新规则统计表格
-            sed -i "s/| pro.mini.txt |.*|/| pro.mini.txt | $CURRENT_TIME | $PRO_COUNT |/" README.md.tmp
-            sed -i "s/| tif.medium.txt |.*|/| tif.medium.txt | $CURRENT_TIME | $TIF_COUNT |/" README.md.tmp
-            sed -i "s/| spam-tlds.txt |.*|/| spam-tlds.txt | $CURRENT_TIME | $SPAM_COUNT |/" README.md.tmp
-            
-            # 检查是否有变化
-            if ! cmp -s README.md README.md.tmp; then
-              echo "Updating README.md with new status"
-              mv README.md.tmp README.md
-              
-              # 提交更新
-              git config --global user.name 'GitHub Actions Bot'
-              git config --global user.email 'actions@github.com'
-              git add README.md
-              git commit -m "📊 Update sync status - $(date -u +'%Y-%m-%d %H:%M')"
-              git push
-            else
-              echo "README.md already up to date"
-              rm README.md.tmp
-            fi
+            # 更新现有README
+            sed -i "s/最后同步时间:.*/最后同步时间: $CURRENT_TIME/" README.md
+            sed -i "s/下次同步:.*/下次同步: $NEXT_SYNC/" README.md
+            sed -i "s/| pro.mini.txt |.*|/| pro.mini.txt | $CURRENT_TIME | $PRO_COUNT |/" README.md
+            sed -i "s/| tif.medium.txt |.*|/| tif.medium.txt | $CURRENT_TIME | $TIF_COUNT |/" README.md
+            sed -i "s/| spam-tlds.txt |.*|/| spam-tlds.txt | $CURRENT_TIME | $SPAM_COUNT |/" README.md
+            echo "README.md 已更新"
           else
-            echo "README.md not found, creating one..."
-            # 创建基本的README.md
-            cat > README.md << 'EOF'
+            # 创建新的README
+            echo "创建 README.md..."
+            cat > README.md << EOF
 # 🛡️ AdGuard规则同步仓库
 
 本项目自动同步HaGeZi推荐的优化版AdGuard规则，适用于AdGuard Home。
@@ -229,32 +155,84 @@ jobs:
 ---
 *自动同步自 [HaGeZi's DNS Blocklists](https://github.com/hagezi/dns-blocklists)*
 EOF
-            
-            # 替换占位符
-            sed -i "s/\$CURRENT_TIME/$CURRENT_TIME/g" README.md
-            sed -i "s/\$NEXT_SYNC/$NEXT_SYNC/g" README.md
-            sed -i "s/\$PRO_COUNT/$PRO_COUNT/g" README.md
-            sed -i "s/\$TIF_COUNT/$TIF_COUNT/g" README.md
-            sed -i "s/\$SPAM_COUNT/$SPAM_COUNT/g" README.md
-            
-            # 提交新README
-            git config --global user.name 'GitHub Actions Bot'
-            git config --global user.email 'actions@github.com'
-            git add README.md
-            git commit -m "📝 Create README with sync status"
-            git push
+            echo "README.md 已创建"
           fi
           
-          # 更新状态文件
-          echo "Sync Status" > sync-status.txt
-          echo "===========" >> sync-status.txt
-          echo "Last Sync: $CURRENT_TIME" >> sync-status.txt
-          echo "Next Sync: $NEXT_SYNC" >> sync-status.txt
-          echo "" >> sync-status.txt
-          echo "Rule Statistics" >> sync-status.txt
-          echo "===============" >> sync-status.txt
-          echo "pro.mini.txt: $PRO_COUNT entries" >> sync-status.txt
-          echo "tif.medium.txt: $TIF_COUNT entries" >> sync-status.txt
-          echo "spam-tlds.txt: $SPAM_COUNT entries" >> sync-status.txt
-          echo "" >> sync-status.txt
-          echo "Generated at: $CURRENT_TIME" >> sync-status.txt
+          # 4. 更新状态文件（用于日志）
+          echo "更新状态文件..."
+          cat > sync-status.txt << EOF
+最后同步: $CURRENT_TIME
+下次同步: $NEXT_SYNC
+
+规则统计:
+- pro.mini.txt: $PRO_COUNT 条
+- tif.medium.txt: $TIF_COUNT 条  
+- spam-tlds.txt: $SPAM_COUNT 条
+
+生成于: $CURRENT_TIME
+EOF
+          
+          # 5. 记录日志
+          echo "Sync completed at $(date)" >> logs/sync-$(date +%Y-%m-%d).log
+          
+          # 6. 设置输出变量，用于后续步骤判断
+          if [[ "$any_rule_updated" = true ]]; then
+            echo "有规则更新，需要提交"
+            echo "update_type=rules_and_status" >> $GITHUB_OUTPUT
+          else
+            echo "仅状态信息更新，需要提交"
+            echo "update_type=status_only" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit and Push Changes
+        if: steps.sync.outputs.update_type
+        run: |
+          echo "准备提交更改..."
+          
+          # 配置git
+          git config --global user.name 'GitHub Actions Bot'
+          git config --global user.email 'actions@github.com'
+          
+          # 添加所有更改的文件
+          git add rules/ README.md sync-status.txt logs/
+          
+          # 检查是否有更改需要提交
+          if git diff --cached --quiet; then
+            echo "没有检测到更改，跳过提交。"
+          else
+            # 根据更新类型生成提交信息
+            if [[ "${{ steps.sync.outputs.update_type }}" == "rules_and_status" ]]; then
+              commit_msg="🤖 同步规则并更新状态 - $(date -u +'%Y-%m-%d %H:%M')"
+            else
+              commit_msg="📊 更新同步状态 - $(date -u +'%Y-%m-%d %H:%M')"
+            fi
+            
+            # 提交并推送
+            git commit -m "$commit_msg"
+            git push
+            echo "更改已提交并推送。"
+          fi
+
+      - name: Generate Summary Report
+        if: always()
+        run: |
+          echo "## 📊 同步报告" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ -f "sync-status.txt" ]]; then
+            # 从状态文件读取信息
+            LAST_SYNC=$(grep "最后同步:" sync-status.txt | cut -d':' -f2- | xargs)
+            NEXT_SYNC=$(grep "下次同步:" sync-status.txt | cut -d':' -f2- | xargs)
+            PRO_COUNT=$(grep "pro.mini.txt:" sync-status.txt | grep -o '[0-9]\+' | head -1)
+            TIF_COUNT=$(grep "tif.medium.txt:" sync-status.txt | grep -o '[0-9]\+' | head -1)
+            SPAM_COUNT=$(grep "spam-tlds.txt:" sync-status.txt | grep -o '[0-9]\+' | head -1)
+            
+            echo "- **最后同步:** $LAST_SYNC" >> $GITHUB_STEP_SUMMARY
+            echo "- **下次同步:** $NEXT_SYNC" >> $GITHUB_STEP_SUMMARY
+            echo "- **Pro Mini 规则:** $PRO_COUNT 条" >> $GITHUB_STEP_SUMMARY
+            echo "- **TIF Medium 规则:** $TIF_COUNT 条" >> $GITHUB_STEP_SUMMARY
+            echo "- **Spam TLDs:** $SPAM_COUNT 条" >> $GITHUB_STEP_SUMMARY
+            echo "- **更新类型:** ${{ steps.sync.outputs.update_type || '未检测到更改' }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ 状态文件未生成，同步可能失败。" >> $GITHUB_STEP_SUMMARY
+          fi
